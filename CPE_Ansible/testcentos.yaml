@@ -1,0 +1,175 @@
+---
+
+- hosts: all
+  become: true
+  pre_tasks:
+
+  - name: install updates (CentOS)
+    tags: always
+    yum:
+      update_cache: yes
+    changed_when: false
+    when: ansible_distribution == "CentOS"
+
+  - name: install updates (Ubuntu)
+    tags: always
+    apt:
+      update_cache: yes
+    changed_when: false
+    when: ansible_distribution == "Ubuntu"
+
+
+  #Install httpd and apache2 for CentOS 
+
+  - name: Install Lamp Stack for CentOS
+    yum:
+      name:
+        - httpd
+        - php
+        - mariadb-server
+      state: latest
+
+
+  #Install Nagios for CentOS
+
+  - name: Installing epel-release
+    yum:
+      name:
+        - epel-release
+      state: latest
+
+  - name: Installing Additional Libraries for Nagios
+    yum:
+      name:
+        - gcc
+        - glibc
+        - glibc-common
+        - perl
+        - wget
+        - gd
+        - gd-devel
+        - openssl-devel
+        - make
+        - gettext
+        - automake
+        - autoconf
+        - net-snmp
+        - net-snmp-utils
+        - python2-pip
+      state: latest
+
+  - name: Installing Passlib Python Package
+    pip:
+      name: passlib
+
+  - name: Creating a Destination Directory for Nagios
+    file:
+      path: ~/nagios
+      state: directory
+
+  - name: Downloading and Extracting Nagios tar.gz file
+    unarchive:
+      src: https://github.com/NagiosEnterprises/nagioscore/archive/nagios-4.4.6.tar.gz
+      dest: ~/nagios
+      remote_src: yes
+      mode: 0777
+      owner: root
+      group: root
+
+  - name: Creating Users and Groups; Compiling and Installing Nagios
+    shell: |
+      cd ~/nagios/nagioscore-**
+      ./configure
+      make all
+      make install-groups-users
+      usermod -a -G nagios apache
+      make install
+      make install-daemoninit
+      make install-commandmode
+      make install-config
+      make install-webconf
+
+  - name: Downloading and Extracting Nagios Plugins tar.gz file
+    unarchive:
+      src: https://github.com/nagios-plugins/nagios-plugins/archive/release-2.3.3.tar.gz
+      dest: ~/nagios
+      remote_src: yes
+      mode: 0777
+      owner: root
+      group: root
+
+  - name: Compiling and Installing Plugins
+    shell: |
+      cd ~/nagios/nagios-plugins*
+      ./tools/setup
+      ./configure
+      make
+      make install
+
+  - name: Configuring the Credentials of Nagios Admin User
+    community.general.htpasswd:
+      path: /usr/local/nagios/etc/htpasswd.users
+      name: nagiosadmin
+      password: admin123$
+
+
+  # Installing Prometheus for CentOS
+
+  - name: Creating a Destination Directory for Prometheus
+    file:
+      path: ~/prometheus
+      state: directory
+
+  - name: Downloading and Extracting Prometheus tar.gz file
+    unarchive:
+      src: https://github.com/prometheus/prometheus/releases/download/v2.39.1/prometheus-2.39.1.linux-amd64.tar.gz
+      dest: ~/prometheus
+      remote_src: yes
+      mode: 0777
+      owner: root
+      group: root
+
+  - name: Stopping the Prometheus Service to Avoid Service Conflict
+    service:
+      name: prometheus
+      state: stopped
+
+  - name: Adding the Prometheus Executable Files
+    shell: |
+      cd ~/prometheus/prometheus*
+      cp -r . /usr/local/bin/prometheus
+
+  - name: Copying the Service File of Prometheus
+    copy:
+      src: prometheus.service
+      dest: /etc/systemd/system/
+      mode: 0777
+      owner: root
+      group: root
+
+
+  #Restarting or Enabling Services  
+
+  - name: Restarting/Enabling Nagios service
+    service:
+      name: nagios
+      state: restarted
+      enabled: true
+
+  - name: Restarting/Enabling httpd service
+    service:
+      name: httpd
+      state: restarted
+      enabled: true
+
+  - name: Restarting/Enabling mariadb service
+    service:
+      name: mariadb
+      state: restarted
+      enabled: true
+
+  - name: Restarting/Enabling Prometheus service
+    service:
+      name: prometheus
+      state: restarted
+      enabled: true
